@@ -86,7 +86,10 @@ imposent 32 octets. Un `EvidenceHash` distingue l'empreinte du reste du reçu JS
 
 Pour une démonstration locale reproductible de ce mécanisme, utiliser
 `cargo test --locked -p hello-world test_partial_arbitration -- --nocapture`.
-L'interface utilise le contrat Testnet configuré dans le binding généré.
+L’interface utilise le [contrat mis à jour sur Stellar Testnet](https://stellar.expert/explorer/testnet/contract/CCDLCJ5YFWLPC6A57SVENK3AI24NUEE66JOB4WQZZC7JRIYQGX2ITW7C).
+Les locations appartiennent à l’instance sur laquelle elles ont été créées.
+Pour retrouver les anciennes locations, lancer Vite avec
+`VITE_ESCROW_CONTRACT_ID=CCSGPWWJNTTWA4CZU65IIQ3SWVELDWRFYCOKKZ6OF6ZMJXQEQNI5CMHQ`.
 Pour une nouvelle instance, compiler le workspace avec
 `rustup target add wasm32v1-none` puis
 `stellar contract build --package hello-world`, déployer sur Testnet, et
