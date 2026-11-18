@@ -1,4 +1,6 @@
 #![no_std]
+// The deployed Soroban ABI and its generated clients keep the existing argument list.
+#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, token, Address, BytesN, Env,
