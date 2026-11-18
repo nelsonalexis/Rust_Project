@@ -4,6 +4,7 @@ import { signTransaction } from "@stellar/freighter-api";
 
 import {
   Client,
+  EscrowError,
 } from "./contracts/escrow/dist/index.js";
 
 import type {
@@ -101,12 +102,21 @@ export async function getRental(
       rental_id: rentalId,
     });
 
+  return readRentalSimulation(transaction);
+}
+
+type RentalTransaction = Awaited<ReturnType<Client["get_rental"]>>;
+
+export function readRentalSimulation(transaction: RentalTransaction): Rental {
+  // The SDK uses spec documentation for errors. The generated enum provides
+  // the variant names even when the contract specification has empty docs.
+  transaction.options.errorTypes = EscrowError;
   return readRentalResult(transaction.result);
 }
 
-export function readRentalResult(result: Awaited<ReturnType<Client["get_rental"]>>["result"]): Rental {
+export function readRentalResult(result: RentalTransaction["result"]): Rental {
   if (result.isErr()) {
-    throw new Error(result.unwrapErr().message);
+    throw new Error(result.unwrapErr().message || "Le contrat a refusé cette action.");
   }
   return result.unwrap();
 }

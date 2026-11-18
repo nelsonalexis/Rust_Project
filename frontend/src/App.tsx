@@ -19,6 +19,7 @@ import {
   hexToBuffer,
   randomEvidenceHash,
   readRentalResult,
+  readRentalSimulation,
   stroopsToXlm,
   xlmToStroops,
 } from "./stellar";
@@ -354,7 +355,7 @@ function App() {
           client,
         );
 
-      readRentalResult(transaction.result);
+      readRentalSimulation(transaction);
 
       setMessage(
         `${name} : signature requise dans Freighter.`,
