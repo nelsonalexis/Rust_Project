@@ -22,3 +22,10 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
+
+[profile.bench]
+opt-level = 3
+debug = 1
+strip = "none"
+lto = false
+codegen-units = 16
