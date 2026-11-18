@@ -1,3 +1,4 @@
+import { EvidenceUpload } from "./EvidenceUpload";
 import {
   useEffect,
   useMemo,
@@ -1097,6 +1098,8 @@ function App() {
                   }
                 />
 
+                <EvidenceUpload onFingerprint={setFinalHash} />
+
                 <button
                   className="action-button"
                   disabled={
@@ -1171,6 +1174,8 @@ function App() {
                     )
                   }
                 />
+
+                <EvidenceUpload onFingerprint={setClaimHash} />
 
                 <button
                   className="action-button danger-button"
@@ -1697,6 +1702,8 @@ function App() {
                 )
               }
             />
+
+            <EvidenceUpload onFingerprint={setInitialHash} />
 
             <div className="arbitrator-info">
               <strong>
