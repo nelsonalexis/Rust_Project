@@ -40,15 +40,35 @@ pub struct EvidenceReceipt {
     pub byte_count: usize,
 }
 
+#[derive(Deserialize)]
+struct EvidenceNote {
+    text: String,
+}
+
 pub fn app() -> std::io::Result<Router> {
     Ok(Router::new()
         .route("/evidence/fingerprint", post(create_fingerprint))
+        .route("/evidence/fingerprint/text", post(create_text_fingerprint))
         .layer(DefaultBodyLimit::max(MAX_EVIDENCE_BYTES))
         .with_state(EvidenceWorker::start()?))
 }
 
 async fn create_fingerprint(
     State(worker): State<EvidenceWorker>,
+    data: Bytes,
+) -> Result<Json<EvidenceReceipt>, EvidenceError> {
+    hash_evidence(&worker, data).await
+}
+
+async fn create_text_fingerprint(
+    State(worker): State<EvidenceWorker>,
+    Json(note): Json<EvidenceNote>,
+) -> Result<Json<EvidenceReceipt>, EvidenceError> {
+    hash_evidence(&worker, Bytes::from(note.text)).await
+}
+
+async fn hash_evidence(
+    worker: &EvidenceWorker,
     data: Bytes,
 ) -> Result<Json<EvidenceReceipt>, EvidenceError> {
     if data.is_empty() {
