@@ -34,3 +34,27 @@ async fn fingerprints_evidence_and_rejects_invalid_payloads(
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn fingerprints_utf8_text_from_json() -> Result<(), Box<dyn std::error::Error>> {
+    let router = app()?;
+    let text = "État des lieux";
+    let response = router
+        .oneshot(
+            Request::post("/evidence/fingerprint/text")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(
+                    &serde_json::json!({ "text": text }),
+                )?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let receipt: EvidenceReceipt =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1024).await?)?;
+    assert_eq!(receipt.byte_count, text.len());
+    assert_eq!(
+        receipt.sha256,
+        drive_escrow_api::fingerprint(text.as_bytes())
+    );
+    Ok(())
+}

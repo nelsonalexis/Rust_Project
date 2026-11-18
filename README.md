@@ -46,6 +46,15 @@ Le fichier est traité en mémoire. Le contrat reçoit seulement les 32 octets
 d'empreinte. La possession du fichier original permet de recalculer l'empreinte
 et de comparer les deux valeurs.
 
+Un constat textuel peut aussi passer par une route JSON. L'empreinte porte
+sur les octets UTF-8 du champ `text`, après décodage du JSON.
+
+```sh
+curl -fsS http://127.0.0.1:3000/evidence/fingerprint/text \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"text":"État des lieux signé par les deux parties"}'
+```
+
 ## Architecture
 
 | Composant | Responsabilité |
