@@ -1,7 +1,9 @@
 #![no_std]
+// The deployed Soroban ABI and its generated clients keep the existing argument list.
+#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, token, Address, BytesN, Env,
 };
 
 #[contracttype]
@@ -77,6 +79,32 @@ pub enum DataKey {
 #[contract]
 pub struct EscrowContract;
 
+#[contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowError {
+    InvalidDeposit = 1,
+    SameParties = 2,
+    DuplicateArbitrators = 3,
+    DuplicateRental = 4,
+    InvalidStatus = 5,
+    NotAccepted = 6,
+    NotFunded = 7,
+    CannotCancel = 8,
+    NotActive = 9,
+    ReturnNotReported = 10,
+    ReturnNotConfirmed = 11,
+    InvalidClaimAmount = 12,
+    DuplicateClaim = 13,
+    NoClaim = 14,
+    NoDispute = 15,
+    InvalidVote = 16,
+    AlreadyVoted = 17,
+    NotArbitrator = 18,
+    InvalidAward = 19,
+    RentalNotFound = 20,
+}
+
 #[contractimpl]
 impl EscrowContract {
     // ========================================================
@@ -94,28 +122,28 @@ impl EscrowContract {
         arbitrator_1: Address,
         arbitrator_2: Address,
         arbitrator_3: Address,
-    ) -> Rental {
+    ) -> Result<Rental, EscrowError> {
         owner.require_auth();
 
         if deposit_amount <= 0 {
-            panic!("Invalid deposit");
+            return Err(EscrowError::InvalidDeposit);
         }
 
         if renter == owner {
-            panic!("Renter and owner must differ");
+            return Err(EscrowError::SameParties);
         }
 
         if arbitrator_1 == arbitrator_2
             || arbitrator_1 == arbitrator_3
             || arbitrator_2 == arbitrator_3
         {
-            panic!("Arbitrators must differ");
+            return Err(EscrowError::DuplicateArbitrators);
         }
 
         let key = DataKey::Rental(rental_id);
 
         if env.storage().persistent().has(&key) {
-            panic!("Rental already exists");
+            return Err(EscrowError::DuplicateRental);
         }
 
         let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -159,14 +187,14 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // READ
     // ========================================================
 
-    pub fn get_rental(env: Env, rental_id: u64) -> Rental {
+    pub fn get_rental(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
         Self::load(&env, rental_id)
     }
 
@@ -174,62 +202,58 @@ impl EscrowContract {
     // RENTER ACCEPTS CONTRACT + INITIAL HASH
     // ========================================================
 
-    pub fn accept_rental(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn accept_rental(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Created {
-            panic!("Invalid status");
+            return Err(EscrowError::InvalidStatus);
         }
 
         rental.status = RentalStatus::Accepted;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // DEPOSIT
     // ========================================================
 
-    pub fn deposit(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn deposit(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Accepted {
-            panic!("Rental not accepted");
+            return Err(EscrowError::NotAccepted);
         }
 
         let token_client = token::Client::new(&env, &rental.token);
         let escrow = env.current_contract_address();
 
-        token_client.transfer(
-            &rental.renter,
-            &escrow,
-            &rental.deposit_amount,
-        );
+        token_client.transfer(&rental.renter, &escrow, &rental.deposit_amount);
 
         rental.status = RentalStatus::Funded;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // START — RENTER
     // ========================================================
 
-    pub fn renter_start(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn renter_start(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Funded {
-            panic!("Rental not funded");
+            return Err(EscrowError::NotFunded);
         }
 
         rental.renter_start_approved = true;
@@ -240,20 +264,20 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // START — OWNER
     // ========================================================
 
-    pub fn owner_start(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn owner_start(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.owner.require_auth();
 
         if rental.status != RentalStatus::Funded {
-            panic!("Rental not funded");
+            return Err(EscrowError::NotFunded);
         }
 
         rental.owner_start_approved = true;
@@ -264,15 +288,15 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // CANCEL BEFORE START
     // ========================================================
 
-    pub fn cancel(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn cancel(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.owner.require_auth();
         rental.renter.require_auth();
@@ -284,45 +308,41 @@ impl EscrowContract {
             || rental.status == RentalStatus::Disputed
             || rental.status == RentalStatus::Resolved
         {
-            panic!("Cannot cancel");
+            return Err(EscrowError::CannotCancel);
         }
 
         if rental.status == RentalStatus::Funded {
             let token_client = token::Client::new(&env, &rental.token);
             let escrow = env.current_contract_address();
 
-            token_client.transfer(
-                &escrow,
-                &rental.renter,
-                &rental.deposit_amount,
-            );
+            token_client.transfer(&escrow, &rental.renter, &rental.deposit_amount);
         }
 
         rental.status = RentalStatus::Cancelled;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // RENTER REPORTS RETURN
     // ========================================================
 
-    pub fn report_return(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn report_return(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Active {
-            panic!("Rental not active");
+            return Err(EscrowError::NotActive);
         }
 
         rental.status = RentalStatus::ReturnReported;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
@@ -333,13 +353,13 @@ impl EscrowContract {
         env: Env,
         rental_id: u64,
         final_evidence_hash: BytesN<32>,
-    ) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    ) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::ReturnReported {
-            panic!("Return not reported");
+            return Err(EscrowError::ReturnNotReported);
         }
 
         rental.renter_return_approved = true;
@@ -351,7 +371,7 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
@@ -362,13 +382,13 @@ impl EscrowContract {
         env: Env,
         rental_id: u64,
         final_evidence_hash: BytesN<32>,
-    ) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    ) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.owner.require_auth();
 
         if rental.status != RentalStatus::ReturnReported {
-            panic!("Return not reported");
+            return Err(EscrowError::ReturnNotReported);
         }
 
         rental.owner_return_approved = true;
@@ -380,34 +400,30 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // NO DAMAGE → FULL REFUND
     // ========================================================
 
-    pub fn release_no_claim(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn release_no_claim(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         if rental.status != RentalStatus::VehicleReturned {
-            panic!("Vehicle return not confirmed");
+            return Err(EscrowError::ReturnNotConfirmed);
         }
 
         let token_client = token::Client::new(&env, &rental.token);
         let escrow = env.current_contract_address();
 
-        token_client.transfer(
-            &escrow,
-            &rental.renter,
-            &rental.deposit_amount,
-        );
+        token_client.transfer(&escrow, &rental.renter, &rental.deposit_amount);
 
         rental.status = RentalStatus::Resolved;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
@@ -419,21 +435,21 @@ impl EscrowContract {
         rental_id: u64,
         amount: i128,
         evidence_hash: BytesN<32>,
-    ) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    ) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.owner.require_auth();
 
         if rental.status != RentalStatus::VehicleReturned {
-            panic!("Vehicle return not confirmed");
+            return Err(EscrowError::ReturnNotConfirmed);
         }
 
         if amount <= 0 || amount > rental.deposit_amount {
-            panic!("Invalid claim amount");
+            return Err(EscrowError::InvalidClaimAmount);
         }
 
         if rental.claim_amount != 0 {
-            panic!("Claim already exists");
+            return Err(EscrowError::DuplicateClaim);
         }
 
         rental.claim_amount = amount;
@@ -443,17 +459,11 @@ impl EscrowContract {
         let undisputed = rental.deposit_amount - amount;
 
         if undisputed > 0 {
-            let token_client =
-                token::Client::new(&env, &rental.token);
+            let token_client = token::Client::new(&env, &rental.token);
 
-            let escrow =
-                env.current_contract_address();
+            let escrow = env.current_contract_address();
 
-            token_client.transfer(
-                &escrow,
-                &rental.renter,
-                &undisputed,
-            );
+            token_client.transfer(&escrow, &rental.renter, &undisputed);
 
             rental.undisputed_released = undisputed;
         }
@@ -462,56 +472,52 @@ impl EscrowContract {
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // RENTER ACCEPTS CLAIM
     // ========================================================
 
-    pub fn accept_claim(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn accept_claim(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Claim {
-            panic!("No active claim");
+            return Err(EscrowError::NoClaim);
         }
 
         let token_client = token::Client::new(&env, &rental.token);
         let escrow = env.current_contract_address();
 
-        token_client.transfer(
-            &escrow,
-            &rental.owner,
-            &rental.claim_amount,
-        );
+        token_client.transfer(&escrow, &rental.owner, &rental.claim_amount);
 
         rental.status = RentalStatus::Resolved;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
     // RENTER DISPUTES CLAIM
     // ========================================================
 
-    pub fn dispute_claim(env: Env, rental_id: u64) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    pub fn dispute_claim(env: Env, rental_id: u64) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         rental.renter.require_auth();
 
         if rental.status != RentalStatus::Claim {
-            panic!("No active claim");
+            return Err(EscrowError::NoClaim);
         }
 
         rental.status = RentalStatus::Disputed;
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
@@ -526,83 +532,70 @@ impl EscrowContract {
         rental_id: u64,
         arbitrator: Address,
         vote_amount: i128,
-    ) -> Rental {
-        let mut rental = Self::load(&env, rental_id);
+    ) -> Result<Rental, EscrowError> {
+        let mut rental = Self::load(&env, rental_id)?;
 
         arbitrator.require_auth();
 
         if rental.status != RentalStatus::Disputed {
-            panic!("No active dispute");
+            return Err(EscrowError::NoDispute);
         }
 
         if vote_amount < 0 || vote_amount > rental.claim_amount {
-            panic!("Invalid vote amount");
+            return Err(EscrowError::InvalidVote);
         }
 
         if arbitrator == rental.arbitrator_1 {
             if rental.voted_1 {
-                panic!("Already voted");
+                return Err(EscrowError::AlreadyVoted);
             }
 
             rental.vote_1 = vote_amount;
             rental.voted_1 = true;
         } else if arbitrator == rental.arbitrator_2 {
             if rental.voted_2 {
-                panic!("Already voted");
+                return Err(EscrowError::AlreadyVoted);
             }
 
             rental.vote_2 = vote_amount;
             rental.voted_2 = true;
         } else if arbitrator == rental.arbitrator_3 {
             if rental.voted_3 {
-                panic!("Already voted");
+                return Err(EscrowError::AlreadyVoted);
             }
 
             rental.vote_3 = vote_amount;
             rental.voted_3 = true;
         } else {
-            panic!("Not an arbitrator");
+            return Err(EscrowError::NotArbitrator);
         }
 
         // Deux arbitres doivent voter EXACTEMENT le même montant.
         let mut consensus_found = false;
         let mut owner_award: i128 = 0;
 
-        if rental.voted_1
-            && rental.voted_2
-            && rental.vote_1 == rental.vote_2
-        {
+        if rental.voted_1 && rental.voted_2 && rental.vote_1 == rental.vote_2 {
             consensus_found = true;
             owner_award = rental.vote_1;
         }
 
-        if rental.voted_1
-            && rental.voted_3
-            && rental.vote_1 == rental.vote_3
-        {
+        if rental.voted_1 && rental.voted_3 && rental.vote_1 == rental.vote_3 {
             consensus_found = true;
             owner_award = rental.vote_1;
         }
 
-        if rental.voted_2
-            && rental.voted_3
-            && rental.vote_2 == rental.vote_3
-        {
+        if rental.voted_2 && rental.voted_3 && rental.vote_2 == rental.vote_3 {
             consensus_found = true;
             owner_award = rental.vote_2;
         }
 
         if consensus_found {
-            Self::resolve_dispute(
-                &env,
-                &mut rental,
-                owner_award,
-            );
+            Self::resolve_dispute(&env, &mut rental, owner_award)?;
         }
 
         Self::save(&env, &rental);
 
-        rental
+        Ok(rental)
     }
 
     // ========================================================
@@ -617,60 +610,46 @@ impl EscrowContract {
     // INTERNAL FUNCTIONS
     // ========================================================
 
-    fn load(env: &Env, rental_id: u64) -> Rental {
+    fn load(env: &Env, rental_id: u64) -> Result<Rental, EscrowError> {
         env.storage()
             .persistent()
             .get(&DataKey::Rental(rental_id))
-            .expect("Rental not found")
+            .ok_or(EscrowError::RentalNotFound)
     }
 
     fn save(env: &Env, rental: &Rental) {
         env.storage()
             .persistent()
-            .set(
-                &DataKey::Rental(rental.rental_id),
-                rental,
-            );
+            .set(&DataKey::Rental(rental.rental_id), rental);
     }
 
     fn resolve_dispute(
         env: &Env,
         rental: &mut Rental,
         owner_award: i128,
-    ) {
-        if owner_award < 0
-            || owner_award > rental.claim_amount
-        {
-            panic!("Invalid award");
+    ) -> Result<(), EscrowError> {
+        if owner_award < 0 || owner_award > rental.claim_amount {
+            return Err(EscrowError::InvalidAward);
         }
 
-        let token_client =
-            token::Client::new(env, &rental.token);
+        let token_client = token::Client::new(env, &rental.token);
 
-        let escrow =
-            env.current_contract_address();
+        let escrow = env.current_contract_address();
 
-        let renter_award =
-            rental.claim_amount - owner_award;
+        let renter_award = rental.claim_amount - owner_award;
 
         if owner_award > 0 {
-            token_client.transfer(
-                &escrow,
-                &rental.owner,
-                &owner_award,
-            );
+            token_client.transfer(&escrow, &rental.owner, &owner_award);
         }
 
         if renter_award > 0 {
-            token_client.transfer(
-                &escrow,
-                &rental.renter,
-                &renter_award,
-            );
+            token_client.transfer(&escrow, &rental.renter, &renter_award);
         }
 
         rental.status = RentalStatus::Resolved;
+        Ok(())
     }
 }
 
+#[cfg(test)]
 mod test;
