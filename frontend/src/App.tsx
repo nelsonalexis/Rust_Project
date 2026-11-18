@@ -18,6 +18,8 @@ import {
   getRental,
   hexToBuffer,
   randomEvidenceHash,
+  readRentalResult,
+  readRentalSimulation,
   stroopsToXlm,
   xlmToStroops,
 } from "./stellar";
@@ -317,7 +319,7 @@ function App() {
       client: ReturnType<
         typeof createWalletClient
       >,
-    ) => Promise<any>,
+    ) => ReturnType<ReturnType<typeof createWalletClient>["create_rental"]>,
   ): Promise<boolean> {
     if (!address) {
       setError(
@@ -353,6 +355,8 @@ function App() {
           client,
         );
 
+      readRentalSimulation(transaction);
+
       setMessage(
         `${name} : signature requise dans Freighter.`,
       );
@@ -361,7 +365,8 @@ function App() {
        * Le signer Freighter se trouve
        * déjà dans createWalletClient().
        */
-      await transaction.signAndSend();
+      const confirmation = await transaction.signAndSend();
+      readRentalResult(confirmation.result);
 
       setMessage(
         `${name} : transaction confirmée.`,

@@ -1,9 +1,10 @@
 import { Buffer } from "buffer";
+import { Networks } from "@stellar/stellar-sdk";
 import { signTransaction } from "@stellar/freighter-api";
 
 import {
   Client,
-  networks,
+  EscrowError,
 } from "./contracts/escrow/dist/index.js";
 
 import type {
@@ -11,10 +12,11 @@ import type {
 } from "./contracts/escrow/dist/index.js";
 
 export const CONTRACT_ID =
-  networks.testnet.contractId;
+  import.meta.env.VITE_ESCROW_CONTRACT_ID ||
+  "CCDLCJ5YFWLPC6A57SVENK3AI24NUEE66JOB4WQZZC7JRIYQGX2ITW7C";
 
 export const NETWORK_PASSPHRASE =
-  networks.testnet.networkPassphrase;
+  Networks.TESTNET;
 
 export const RPC_URL =
   "https://soroban-testnet.stellar.org";
@@ -100,7 +102,23 @@ export async function getRental(
       rental_id: rentalId,
     });
 
-  return transaction.result;
+  return readRentalSimulation(transaction);
+}
+
+type RentalTransaction = Awaited<ReturnType<Client["get_rental"]>>;
+
+export function readRentalSimulation(transaction: RentalTransaction): Rental {
+  // The SDK uses spec documentation for errors. The generated enum provides
+  // the variant names even when the contract specification has empty docs.
+  transaction.options.errorTypes = EscrowError;
+  return readRentalResult(transaction.result);
+}
+
+export function readRentalResult(result: RentalTransaction["result"]): Rental {
+  if (result.isErr()) {
+    throw new Error(result.unwrapErr().message || "Le contrat a refusé cette action.");
+  }
+  return result.unwrap();
 }
 
 /**
