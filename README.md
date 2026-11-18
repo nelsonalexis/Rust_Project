@@ -46,7 +46,8 @@ Le fichier est traité en mémoire. Le contrat reçoit seulement les 32 octets
 d'empreinte. La possession du fichier original permet de recalculer l'empreinte
 et de comparer les deux valeurs.
 
-Un constat textuel peut aussi passer par une route JSON. L'empreinte porte
+Dans l’interface, le champ « Constat textuel » permet aussi de calculer
+l’empreinte d’une note par une route JSON. L'empreinte porte
 sur les octets UTF-8 du champ `text`, après décodage du JSON.
 
 ```sh
